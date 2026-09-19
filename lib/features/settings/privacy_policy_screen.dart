@@ -7,7 +7,7 @@ import '../../app/theme/app_colors.dart';
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
 
-  static const effectiveDate = 'August 2, 2026';
+  static const effectiveDate = 'September 19, 2026';
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +315,16 @@ class PrivacyPolicyScreen extends StatelessWidget {
                         'Hugging Face and related content delivery networks can '
                             'be contacted when you request an AI or voice model '
                             'download.',
+                        'GitHub is contacted to check for a newer version of '
+                            'Cura only when you tap Check for updates in '
+                            'Settings, Updates, or, if you turn on Check for '
+                            'updates automatically there, at most once a day. '
+                            'Automatic checking is off by default. The check '
+                            'asks which version is latest and sends none of your '
+                            'records. When you tap Update, the new app file is '
+                            'downloaded from GitHub. Like any web request, both '
+                            'show GitHub your IP address and standard network '
+                            'metadata.',
                         'Your selected cloud AI provider is contacted only when '
                             'you configure and enable cloud processing or test '
                             'that cloud connection.',
@@ -327,10 +337,16 @@ class PrivacyPolicyScreen extends StatelessWidget {
                       number: '10',
                       title: 'Permissions',
                       bullets: [
-                        'Internet access is used for requested model downloads '
-                            'and for optional cloud AI requests. Local '
+                        'Internet access is used for requested model downloads, '
+                            'for optional cloud AI requests, and for the update '
+                            'check and download when you allow them. Local '
                             'processing does not require a network request after '
                             'required models are available.',
+                        'Permission to install apps is used only to install a '
+                            'Cura update you chose to download. Android asks you '
+                            'to allow it the first time, and will only install '
+                            'an update signed by the same developer key as the '
+                            'Cura you already have.',
                         'Microphone access is used only while you actively '
                             'record a voice question.',
                         'Cura does not request broad storage access. Android '

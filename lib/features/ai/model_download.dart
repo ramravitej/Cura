@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart' show debugPrint;
 const kLlmDownload = 'llm';
 const kVoiceDownload = 'voice';
 
+/// Cura update APK (same downloader + notification).
+const kUpdateDownload = 'apk';
+
 /// A model download in flight.
 class ModelDownload {
   const ModelDownload({
@@ -190,7 +193,7 @@ class ModelDownloader {
                 fileName: fileName,
                 taskId: taskId,
                 percent: 0,
-                error: _message(update.status),
+                error: _message(update.status, kind),
               );
               _emit();
             }
@@ -204,7 +207,9 @@ class ModelDownloader {
     }
   }
 
-  String _message(TaskStatus status) => switch (status) {
+  String _message(TaskStatus status, String kind) => switch (status) {
+    TaskStatus.notFound when kind == kUpdateDownload =>
+      'That update is no longer on GitHub. Check for updates again.',
     TaskStatus.notFound =>
       'That model is no longer available at its download address.',
     TaskStatus.canceled => 'Download cancelled.',

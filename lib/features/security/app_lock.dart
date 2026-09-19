@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/error_codes.dart' as auth_error;
@@ -14,6 +16,24 @@ const kAppLockKey = 'cura_app_lock';
 
 /// Lets [AppLockGate] react to the Settings toggle without a restart.
 final ValueNotifier<bool> appLockEnabledNotifier = ValueNotifier<bool>(false);
+
+/// Lock state: null unknown, true covered. UI waits on [untilUnlocked].
+final ValueNotifier<bool?> appLockedNotifier = ValueNotifier<bool?>(null);
+
+/// Completes once the app is open and not behind the lock screen.
+Future<void> untilUnlocked() {
+  if (appLockedNotifier.value == false) return Future.value();
+  final done = Completer<void>();
+  void check() {
+    if (appLockedNotifier.value == false && !done.isCompleted) {
+      appLockedNotifier.removeListener(check);
+      done.complete();
+    }
+  }
+
+  appLockedNotifier.addListener(check);
+  return done.future;
+}
 
 /// > 0 while an in-app flow has a system activity open (camera scan, file
 /// picker). Returning from those is our own flow, not the user leaving.
@@ -174,9 +194,13 @@ class LockScreen extends StatelessWidget {
 /// Wraps [child] and shows the lock on launch and on return from background.
 /// A no-op when the flag is off.
 class AppLockGate extends StatefulWidget {
-  const AppLockGate({super.key, required this.child});
+  const AppLockGate({super.key, required this.child, this.auth});
 
   final Widget child;
+
+  /// Tests pass a fake; the app uses the device's own.
+  @visibleForTesting
+  final BiometricAuth? auth;
 
   @override
   State<AppLockGate> createState() => _AppLockGateState();
@@ -184,10 +208,17 @@ class AppLockGate extends StatefulWidget {
 
 class _AppLockGateState extends State<AppLockGate>
     with WidgetsBindingObserver {
-  final BiometricAuth _auth = BiometricAuth();
-  bool _enabled = false;
+  late final BiometricAuth _auth = widget.auth ?? BiometricAuth();
+  // null until prefs load — cover child meanwhile.
+  bool? _enabled;
   bool _locked = false;
   bool _authing = false; // true while a prompt is open, so it can't fire twice
+
+  /// Syncs [_locked] and [appLockedNotifier].
+  void _setLocked(bool locked) {
+    appLockedNotifier.value = locked;
+    if (mounted && locked != _locked) setState(() => _locked = locked);
+  }
 
   @override
   void initState() {
@@ -207,31 +238,27 @@ class _AppLockGateState extends State<AppLockGate>
   Future<void> _load() async {
     final enabled = await isAppLockEnabled();
     if (!mounted) return;
-    setState(() {
-      _enabled = enabled;
-      _locked = enabled;
-    });
+    setState(() => _enabled = enabled);
+    _setLocked(enabled);
     if (enabled) _tryUnlock();
   }
 
   // Sync the cached flag with the Settings toggle; turning it off drops the cover.
   void _onEnabledChanged() {
     final enabled = appLockEnabledNotifier.value;
-    if (!mounted || enabled == _enabled) return;
-    setState(() {
-      _enabled = enabled;
-      if (!enabled) _locked = false;
-    });
+    if (!mounted || _enabled == null || enabled == _enabled) return;
+    setState(() => _enabled = enabled);
+    if (!enabled) _setLocked(false);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Ignore transitions our own prompt or an in-app picker/scanner causes.
-    if (_authing || !_enabled || appLockSuppressed) return;
+    if (_authing || _enabled != true || appLockSuppressed) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // Re-lock and hide records from the app-switcher preview.
-      if (!_locked) setState(() => _locked = true);
+      if (!_locked) _setLocked(true);
     } else if (state == AppLifecycleState.resumed && _locked) {
       _tryUnlock();
     }
@@ -242,7 +269,7 @@ class _AppLockGateState extends State<AppLockGate>
     _authing = true;
     try {
       final ok = await _auth.authenticate('Unlock Cura to open your records');
-      if (ok && mounted) setState(() => _locked = false);
+      if (ok) _setLocked(false);
     } finally {
       _authing = false;
     }
@@ -253,7 +280,10 @@ class _AppLockGateState extends State<AppLockGate>
     return Stack(
       children: [
         widget.child,
-        if (_locked) LockScreen(onUnlock: _tryUnlock),
+        if (_enabled == null)
+          const Positioned.fill(child: ColoredBox(color: AppColors.canvas))
+        else if (_locked)
+          LockScreen(onUnlock: _tryUnlock),
       ],
     );
   }

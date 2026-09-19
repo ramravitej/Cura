@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../ai/ai_providers.dart';
 import '../ask/ask_prompt_rotation.dart';
 import '../library/home_screen.dart';
+import '../security/app_lock.dart' show appLockedNotifier;
 
 /// Persisted flag: has the user been through onboarding (engine/model choice)?
 const kOnboardedKey = 'cura_onboarded';
@@ -24,6 +25,8 @@ Future<void> finishOnboarding(BuildContext context, WidgetRef ref) async {
   ref.invalidate(aiModelStateProvider);
   final homeAskExample = await askPromptRotation.takeNextHomeExample();
   if (!context.mounted) return;
+  // Just finished setup — unblock untilUnlocked() waiters.
+  appLockedNotifier.value = false;
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute(
       builder: (_) => HomeScreen(homeAskExample: homeAskExample),

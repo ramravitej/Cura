@@ -19,6 +19,8 @@ final modelDownloaderProvider = Provider<ModelDownloader>((ref) {
   final downloader = ModelDownloader(
     onFinished: (task, ok) async {
       if (!ok) return;
+      // APK: update dialog handles install.
+      if (task.metaData == kUpdateDownload) return;
       if (task.metaData == kLlmDownload) {
         // Activate here, since download() no longer waits for the transfer.
         final model = aiModelByFileName(task.filename);
@@ -55,6 +57,11 @@ final llmDownloadProvider = Provider<ModelDownload?>((ref) {
 /// The voice (Whisper) model download in flight, or null.
 final voiceDownloadProvider = Provider<ModelDownload?>((ref) {
   return ref.watch(modelDownloadsProvider).value?[kVoiceDownload];
+});
+
+/// A Cura update download in flight, or null.
+final updateDownloadProvider = Provider<ModelDownload?>((ref) {
+  return ref.watch(modelDownloadsProvider).value?[kUpdateDownload];
 });
 
 /// Stores the optional cloud-model config + which engine is active.

@@ -47,6 +47,8 @@ dependencies:
   shared_preferences: ^2.5.5
   background_downloader: ^9.5.5
   http: ^1.6.0
+  # SHA-256 check of a downloaded update against GitHub's published digest.
+  crypto: ^3.0.7
   # Encrypted storage (Android Keystore) for the optional cloud-model API key.
   # The key is a secret, so it never sits in plaintext prefs — see
   # features/ai/remote/remote_ai_store.dart.

@@ -3,8 +3,10 @@ package com.cura.cura
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -40,9 +42,55 @@ class MainActivity : FlutterFragmentActivity() {
                         )
                         result.success(null)
                     }
+                    // Updates: unknown-apps prompt; same signing key only.
+                    "canInstallPackages" ->
+                        result.success(packageManager.canRequestPackageInstalls())
+                    "openInstallPermission" -> {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:$packageName"),
+                            )
+                        )
+                        result.success(null)
+                    }
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null || !File(path).exists()) {
+                            result.error("missing", "Update file not found", null)
+                        } else {
+                            installApk(File(path))
+                            result.success(null)
+                        }
+                    }
+                    "openUrl" -> {
+                        val url = call.argument<String>("url")
+                        if (url == null || !url.startsWith("https://")) {
+                            result.error("bad_url", "Only https links open", null)
+                        } else {
+                            startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            result.success(null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Installer reads the APK via FileProvider (updates/ only).
+    private fun installApk(apk: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.updates", apk)
+        startActivity(
+            Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+        )
     }
 
     private fun deviceInfo(): Map<String, Any?> {

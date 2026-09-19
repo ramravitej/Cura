@@ -76,6 +76,8 @@ androidComponents {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // FileProvider for updates (same core-ktx as background_downloader).
+    implementation("androidx.core:core-ktx:1.17.0")
 }
 
 kotlin {

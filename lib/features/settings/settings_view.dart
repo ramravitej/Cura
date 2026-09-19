@@ -17,6 +17,7 @@ import '../ai/widgets/model_download_sheet.dart';
 import '../ask/voice_input_controller.dart';
 import '../ask/voice_model_sheet.dart';
 import '../security/app_lock.dart';
+import '../updates/updates_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'storage_info.dart';
 import 'storage_screen.dart';
@@ -130,6 +131,19 @@ class SettingsView extends ConsumerWidget {
                           style: textTheme.bodyMedium?.copyWith(
                             color: AppColors.faint,
                           ),
+                        ),
+                      ),
+                    ),
+                    SettingsRow(
+                      icon: Icons.system_update_outlined,
+                      iconColor: AppColors.accent,
+                      tileColor: AppColors.softTint,
+                      title: 'Updates',
+                      subtitle: 'Check for a new version',
+                      trailing: const SettingsChevron(),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const UpdatesScreen(),
                         ),
                       ),
                     ),

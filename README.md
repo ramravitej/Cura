@@ -336,8 +336,9 @@ away.
 **Tradeoffs, honestly.** Answers are slower than cloud, and the speed depends entirely
 on your phone. It works best on devices with 6 GB or more of RAM.
 
-**Network use.** The one-time model download, and nothing else. Your documents never
-leave the device.
+**Network use.** The one-time model download, and, only if you turn it on, a daily
+check for a new version of Cura (see [Updates](#updates)). Your documents never leave
+the device.
 
 ---
 
@@ -437,6 +438,32 @@ toggled in Settings, and also hides your records in the app switcher preview. If
 later remove every screen lock from your phone, Cura lets you in rather than locking
 you out of your own records.
 
+## Updates
+
+Cura can tell you when a new version is out and install it for you. Open
+**Settings → Updates** and tap **Check for updates** to look now: it says so when there
+is nothing new. Turn on **Check for updates automatically** there and Cura asks GitHub
+at most once a day, and shows you the update as soon as you next open the app. It is
+off by default, so until you turn it on, Cura never checks by itself.
+
+The check asks which version is latest and sends none of your records. Like any web
+request, it shows GitHub your IP address. That is the only thing it costs.
+
+When there is a newer version, Cura shows what changed. Tap **Update** and it:
+
+1. Downloads the APK from the release, in the background, with a progress
+   notification.
+2. Checks the file against the SHA-256 GitHub publishes for it, and throws it away if
+   a single byte differs.
+3. Hands it to Android's installer. The first time, Android asks you to let Cura
+   install apps.
+
+Android installs an update only when it is signed with the same key as the Cura
+already on your phone, so a file from anyone else is refused. Your records are kept.
+**Later** closes the notice, and it comes back the next day.
+
+Versions before 1.4.0 do not have this, so updating to 1.4.0 is done by hand, once.
+
 ## Your data stays yours
 
 - **Export** any single record or your entire library as a PDF. Export covers your
@@ -459,6 +486,7 @@ you out of your own records.
 | OCR | `google_mlkit_document_scanner`, `google_mlkit_text_recognition`, bundled and offline |
 | On-device LLM | `llama_flutter_android` (llama.cpp, GGUF, CPU, ARM64) |
 | Model download | `background_downloader`, with a progress notification and cancel |
+| Updates | GitHub Releases API over `http`, the same downloader for the APK, `crypto` for the SHA-256 check, Android's installer via a `FileProvider` |
 | Speech to text | `whisper_ggml` (whisper.cpp), microphone via `record` |
 | Reminders | `flutter_local_notifications`, scheduled in your zone with `timezone` and `flutter_timezone` |
 | App lock | `local_auth` (fingerprint, face, device PIN) |
@@ -533,6 +561,7 @@ lib/
     pdf_import/    reading a PDF you already have
     security/      the biometric app lock
     settings/      storage, models, engine, and data controls
+    updates/       the opt-in GitHub release check, download and install
 test/              unit and widget tests, one file per area
 ```
 

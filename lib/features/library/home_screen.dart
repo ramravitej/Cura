@@ -17,9 +17,12 @@ import '../scan/document_shape.dart';
 import '../scan/review_document_screen.dart';
 import '../scan/scan_service.dart';
 import '../scan/summary_rewriter.dart';
+import '../security/app_lock.dart' show untilUnlocked;
 import '../settings/settings_view.dart';
 import '../timeline/timeline_view.dart';
 import '../trends/trends_screen.dart';
+import '../updates/update_check.dart';
+import '../updates/update_dialog.dart';
 import 'document.dart';
 import 'document_detail_screen.dart';
 import 'empty_state_view.dart';
@@ -36,15 +39,53 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   CuraTab _currentTab = CuraTab.home;
   bool _openingAsk = false;
+  bool _updateChecking = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Sweep pending summaries.
     unawaited(_sweepSummaries());
+    // After lock/onboarding so the dialog is on Home.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_maybeCheckForUpdate()),
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Resume also runs the daily check.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_maybeCheckForUpdate());
+  }
+
+  /// Opt-in daily check after [untilUnlocked].
+  Future<void> _maybeCheckForUpdate() async {
+    if (_updateChecking) return;
+    _updateChecking = true;
+    try {
+      await untilUnlocked();
+      // Skips if off or already checked today.
+      final check = await checkForUpdate(automatic: true);
+      final release = check.release;
+      if (release == null || !mounted) return;
+      await showUpdateDialog(context, release);
+    } catch (e) {
+      // Don't block launch on failure.
+      debugPrint('[Cura.update] launch check failed: $e');
+    } finally {
+      _updateChecking = false;
+    }
   }
 
   /// Queue old summaries and sweep them.
