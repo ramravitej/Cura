@@ -95,7 +95,7 @@ RoutedAnswer? routeQuestion(String question, List<CuraDocument> docs) {
   if (q.isEmpty) return null;
 
   final qd = parseQueryDate(question);
-  final personal = _isPersonal(q) || qd.hasAny;
+  final personal = isPersonalQuestion(q) || qd.hasAny;
 
   // Send reasoning to the model.
   if (_needsReasoning(q)) return null;
@@ -171,9 +171,11 @@ bool _looksLikeDefinition(String q) =>
     RegExp(r'\bwhat\s+(is|are|does)\b').hasMatch(q);
 
 /// The question is about the user's records.
-bool _isPersonal(String q) =>
-    RegExp(r'\b(my|mine|me|i)\b').hasMatch(q) ||
-    RegExp(r'\b(was|were|had)\b').hasMatch(q);
+bool isPersonalQuestion(String q) {
+  final lower = q.toLowerCase();
+  return RegExp(r'\b(my|mine|me|i)\b').hasMatch(lower) ||
+      RegExp(r'\b(was|were|had)\b').hasMatch(lower);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Document type
@@ -667,6 +669,12 @@ final _moneyVerbRe = RegExp(
   r'\b(pay|paid|spend|spent|cost|costs?|charged?|charges?|price)\b',
 );
 final _moneyNounRe = RegExp(r'\b(bills?|receipts?|invoices?|payments?)\b');
+
+/// A money ask, not a measure ask.
+bool isMoneyQuestion(String q) {
+  final lower = q.toLowerCase();
+  return _moneyVerbRe.hasMatch(lower) || _moneyNounRe.hasMatch(lower);
+}
 final _amountAskRe = RegExp(
   r'\bhow much\b|\btotal\b|\bamount\b|\bwhat (was|is|did)\b',
 );

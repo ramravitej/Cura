@@ -226,15 +226,21 @@ const _qualifierWords = <String, List<String>>{
   'urine': ['urine', 'urinary'],
 };
 
+/// Qualifiers named in [text] (e.g. "fasting"), in key order.
+List<String> qualifiersIn(String text) {
+  final lower = text.toLowerCase();
+  return [
+    for (final entry in _qualifierWords.entries)
+      if (entry.value.any((w) => RegExp('\\b$w\\b').hasMatch(lower))) entry.key,
+  ];
+}
+
 /// Alias group + qualifiers (or raw label).
 String _keyFor(String label, int group) {
   final lower = label.toLowerCase();
   final base = group >= 0
       ? aliasGroupName(group)
       : lower.replaceAll(RegExp('[^a-z0-9]'), '');
-  final marks = [
-    for (final entry in _qualifierWords.entries)
-      if (entry.value.any((w) => RegExp('\\b$w\\b').hasMatch(lower))) entry.key,
-  ];
+  final marks = qualifiersIn(lower);
   return marks.isEmpty ? base : '$base:${marks.join(',')}';
 }

@@ -395,6 +395,8 @@ class AiService {
     Set<String> shownSourceIds = const {},
     Set<String> focusDocIds = const {},
     List<String> orderedFocusDocIds = const [],
+    // Trend readings for the named measure.
+    String trendFacts = '',
     GenerationCancellation? cancellation,
   }) async* {
     await _preemptBackground();
@@ -502,11 +504,19 @@ class AiService {
         : 'Answer the health-record question using the supplied records. If the '
               'removed identifying details were essential, ask the user to rephrase '
               'without them.';
+    // Skip on routed answers: rewrite rejects numbers absent from routed text.
+    final trendNote = routed == null && trendFacts.isNotEmpty
+        ? 'Readings over time for the measure the user asked about. Say how '
+              'it has moved across these readings, not only the latest value:\n'
+              '$trendFacts'
+        : '';
     final contextParts = <String>[
       if (verifiedCount != null) 'Verified count: $verifiedCount',
       if (inventory.isNotEmpty) inventory,
       if (detailedContext.isNotEmpty)
         'Relevant report details:\n$detailedContext',
+      // Last so the system prompt stays cache-stable.
+      if (trendNote.isNotEmpty) trendNote,
     ];
     final userContent = routed != null
         ? buildVerifiedRewritePrompt(q, routed)
@@ -982,6 +992,18 @@ class AiService {
         knownIdentityTerms: knownIdentityTerms,
       ),
     );
+    // Empty reply: tell the user; log raw vs thinking size.
+    if (p.answer.isEmpty && !(cancellation?.cancelled ?? false)) {
+      debugPrint(
+        '[Cura.ai] empty remote answer rawChars=${raw.answer.length} '
+        'thinkingChars=${raw.thinking.length}',
+      );
+      yield const AskChunk(
+        'I couldn\'t put an answer together that time. Please ask again.',
+        done: true,
+      );
+      return;
+    }
     // safeTitle = inventory spelling.
     final picked = cloudAnswerCards(
       p.answer,

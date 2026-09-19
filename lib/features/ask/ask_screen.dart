@@ -20,6 +20,11 @@ import '../ai/retrieval.dart';
 import '../ai/widgets/model_download_sheet.dart';
 import '../library/document.dart';
 import '../scan/summary_rewriter.dart';
+import '../trends/trend_card.dart';
+import '../trends/trend_detail_screen.dart';
+import '../trends/trend_note.dart' show trendFacts;
+import '../trends/trend_question.dart';
+import '../trends/trend_series.dart';
 import 'ask_prompt_rotation.dart';
 import 'chat_models.dart';
 import 'voice_input_controller.dart';
@@ -40,6 +45,7 @@ class ChatMessage {
     this.thinking,
     this.thinkingActive = false,
     this.thinkingSeconds,
+    this.trends = const [],
   });
 
   final ChatRole role;
@@ -64,6 +70,9 @@ class ChatMessage {
   /// Reasoning time.
   final int? thinkingSeconds;
 
+  /// Charts for the named measure. Derived, not stored.
+  final List<TrendSeries> trends;
+
   ChatMessage copyWith({
     String? text,
     CuraDocument? source,
@@ -72,6 +81,7 @@ class ChatMessage {
     String? thinking,
     bool? thinkingActive,
     int? thinkingSeconds,
+    List<TrendSeries>? trends,
   }) {
     return ChatMessage(
       role: role,
@@ -83,6 +93,7 @@ class ChatMessage {
       thinking: thinking ?? this.thinking,
       thinkingActive: thinkingActive ?? this.thinkingActive,
       thinkingSeconds: thinkingSeconds ?? this.thinkingSeconds,
+      trends: trends ?? this.trends,
     );
   }
 }
@@ -152,6 +163,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   // Source cards for streamed count answers.
   List<CuraDocument> _streamSources = const [];
   int _streamSourceTotal = 0;
+  // Charts for the named measure this turn.
+  List<TrendSeries> _streamTrends = const [];
 
   // Cloud answer is streaming.
   bool _streamRemote = false;
@@ -233,10 +246,18 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     return null;
   }
 
-  /// Restores a saved message and its cited sources.
-  ChatMessage _restoreMessage(StoredMessage s, List<CuraDocument> docs) {
+  /// Restores a saved message; charts are rebuilt from [question] + [scan].
+  ChatMessage _restoreMessage(
+    StoredMessage s,
+    List<CuraDocument> docs, {
+    required TrendScan scan,
+    String? question,
+  }) {
+    final trends = s.role == ChatRole.assistant && question != null
+        ? trendsForQuestion(question, scan)
+        : const <TrendSeries>[];
     if (s.sourceDocId == null) {
-      return ChatMessage(role: s.role, text: s.text);
+      return ChatMessage(role: s.role, text: s.text, trends: trends);
     }
     final ref = decodeSourceRef(s.sourceDocId!);
     final resolved = [for (final id in ref.ids) ?_docById(docs, id)];
@@ -247,7 +268,17 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       sources: resolved.length > 1 ? resolved : const [],
       // Drop deleted sources.
       sourceTotal: resolved.length > 1 ? resolved.length : 0,
+      trends: trends,
     );
+  }
+
+  /// User question before answer [i]; null if none or past a prior answer.
+  String? _questionBefore(List<StoredMessage> rows, int i) {
+    for (var j = i - 1; j >= 0; j--) {
+      if (rows[j].role == ChatRole.assistant) return null;
+      if (rows[j].role == ChatRole.user) return rows[j].text;
+    }
+    return null;
   }
 
   String _titleFor(String text) =>
@@ -345,6 +376,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     _streamSource = null;
     _streamSources = const [];
     _streamSourceTotal = 0;
+    // Facts for the prompt; charts for the answer.
+    _streamTrends = trendsForQuestion(text, scanTrends(docs));
     _streamThinking = '';
     _thinkingActive = false;
     _thinkingStart = null;
@@ -408,6 +441,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
               shownSourceIds: shownSourceIds,
               focusDocIds: focusDocIds,
               orderedFocusDocIds: orderedFocusDocIds,
+              trendFacts: _streamTrends.map(trendFacts).join('\n\n'),
               cancellation: cancel,
             )) {
       // Stop if the request is stale.
@@ -486,6 +520,15 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
     if (!mounted || seq != _sendSeq) return;
     _cancel = null;
+    // Attach charts after reveal (avoids racing the typewriter).
+    final last = _messages.length - 1;
+    if (_streamTrends.isNotEmpty &&
+        last >= 0 &&
+        _messages[last].role == ChatRole.assistant) {
+      setState(
+        () => _messages[last] = _messages[last].copyWith(trends: _streamTrends),
+      );
+    }
     await repo.addMessage(
       sid,
       ChatRole.assistant,
@@ -524,6 +567,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           source: _streamSource,
           sources: _streamSources,
           sourceTotal: _streamSourceTotal,
+          // Keep chart on stop, like sources.
+          trends: _streamTrends,
           thinkingActive: false,
         ),
       );
@@ -565,12 +610,22 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     final stored = await repo.loadMessages(session.id);
     final docs = ref.read(documentsProvider).value ?? const [];
     if (!mounted) return;
+    // One scan for the whole chat.
+    final scan = scanTrends(docs);
     setState(() {
       _sessionId = session.id;
       _sessionModel = lastRecordedModel(stored);
       _messages
         ..clear()
-        ..addAll(stored.map((s) => _restoreMessage(s, docs)));
+        ..addAll([
+          for (var i = 0; i < stored.length; i++)
+            _restoreMessage(
+              stored[i],
+              docs,
+              scan: scan,
+              question: _questionBefore(stored, i),
+            ),
+        ]);
       _showSuggestions = false;
       _editingIndex = null;
     });
@@ -755,6 +810,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     _streamSource = null;
     _streamSources = const [];
     _streamSourceTotal = 0;
+    _streamTrends = const [];
     _streamThinking = '';
     _thinkingActive = false;
     _thinkingStart = null;
@@ -1202,6 +1258,21 @@ class _MessageBubble extends StatelessWidget {
                 ],
               ),
             ),
+          // Named-measure chart; tap for readings.
+          for (final s in message.trends) ...[
+            const SizedBox(height: 8),
+            TrendCard(
+              series: s,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TrendDetailScreen(
+                    seriesKey: s.key,
+                    onOpenDocument: onViewSource,
+                  ),
+                ),
+              ),
+            ),
+          ],
           // Cited reports. A count over several reports carries [sources]; every
           // other cited answer carries a single [source]. Both render as cards.
           if (message.sources.isNotEmpty) ...[

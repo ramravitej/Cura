@@ -150,21 +150,14 @@ class CloudPrivacyGate {
         ),
       };
 
-  /// Scrub cloud output before display.
+  /// Scrub cloud output for display (same as history scrub, not OCR scrub).
   String responseText(
     String text, {
     Set<String> knownIdentityTerms = const {},
-  }) {
-    final scrubbed = redactConversationForCloud(
-      stripKnownIdentity(text, knownIdentityTerms),
-    );
-    final kept = <String>[];
-    for (final raw in scrubbed.split('\n')) {
-      final line = _sanitizeDocumentText(raw).trim();
-      if (line.isNotEmpty && !containsHardCloudRisk(line)) kept.add(line);
-    }
-    return kept.join('\n').trim();
-  }
+  }) => assistantMessage(
+    text,
+    knownIdentityTerms: knownIdentityTerms,
+  ).content.trim();
 
   String _sanitizeDocumentText(String text) {
     final kept = <String>[];
