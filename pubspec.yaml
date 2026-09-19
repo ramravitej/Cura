@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.0+4
+version: 1.4.0+5
 
 environment:
   sdk: ^3.12.2
@@ -101,8 +101,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Plus Jakarta Sans is bundled as a local asset (not fetched at runtime) so the
-  # app makes zero network calls — see the privacy stance in README.md. It is a
+  # Plus Jakarta Sans is bundled as a local asset (not fetched at runtime) so
+  # there is no runtime font fetch — see the privacy stance in README.md. It is a
   # variable font; weights are selected via fontVariations in code.
   fonts:
     - family: PlusJakartaSans
