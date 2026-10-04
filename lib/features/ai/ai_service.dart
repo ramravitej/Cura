@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../library/document.dart';
 import '../scan/scan_extraction.dart';
@@ -169,15 +173,25 @@ class AiService {
 
   // On-device prompt.
   static const _systemPrompt =
-      'You are Cura, the user\'s on-device medical assistant. Answer briefly, in '
-      'plain language, and only about health or the documents below — for anything '
-      'unrelated, say you only help with medical topics. Use the documents, '
+      'You are AyusAI, the user\'s on-device AI Health Coach and medical assistant. Answer briefly, in '
+      'plain language, and only about health, nutrition, wellness, or the documents below — for anything '
+      'unrelated, say you only help with health topics. Use the documents, '
       'copying values and dates exactly; if a detail is not there, say you don\'t '
       'see it. You may use earlier messages. Keep answers to a sentence or two '
       'unless asked to explain in detail. For a pure greeting, greet warmly as '
-      'Cura and invite the user to ask about their records. Never help with '
+      'AyusAI and invite the user to ask about their health or records. Never help with '
       'self-harm, violence, or drug misuse. You explain, not diagnose; this is '
       'not medical advice.';
+
+  // On-device Vision (Food Scan & Medical Image) prompt.
+  static const _visionSystemPrompt =
+      'You are AyusAI, an on-device AI Health & Nutrition Coach with Vision. '
+      'Analyze the attached image carefully and answer the user\'s question clearly. '
+      'If the image shows food or a meal, identify the food items, estimate approximate '
+      'calories, protein, carbs, and fats, and share 1-2 practical wellness tips. '
+      'If the image shows a medical report, medicine, or label, extract and explain '
+      'the key information in plain language. Be concise and helpful. You explain, '
+      'not diagnose; this is not medical advice.';
 
   // Cloud prompt.
   static const _systemPromptRemote =
@@ -386,7 +400,34 @@ class AiService {
     return '${items.sublist(0, items.length - 1).join(', ')} and ${items.last}';
   }
 
-  /// Answer a grounded question as a stream.
+  /// Downscales an image to <= 448px on its longest side so on-device Vision
+  /// encoders (Qwen3.5-VL / SmolVLM) run fast and fit comfortably in mobile RAM.
+  Future<String> _prepareVisionImage(String sourcePath) async {
+    try {
+      final bytes = await File(sourcePath).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return sourcePath;
+      const maxDim = 448;
+      final resized = (decoded.width > maxDim || decoded.height > maxDim)
+          ? (decoded.width >= decoded.height
+                ? img.copyResize(decoded, width: maxDim)
+                : img.copyResize(decoded, height: maxDim))
+          : decoded;
+      final jpg = img.encodeJpg(resized, quality: 85);
+      final dir = await getTemporaryDirectory();
+      final outPath = p.join(
+        dir.path,
+        'ayus-vision-${DateTime.now().microsecondsSinceEpoch}.jpg',
+      );
+      await File(outPath).writeAsBytes(jpg, flush: true);
+      return outPath;
+    } catch (e) {
+      debugPrint('[Ayus.vision] image resize fallback: $e');
+      return sourcePath;
+    }
+  }
+
+  /// Answer a grounded question (with optional attached image) as a stream.
   Stream<AskChunk> answerQuestionStream(
     String question,
     List<CuraDocument> docs, {
@@ -397,10 +438,13 @@ class AiService {
     List<String> orderedFocusDocIds = const [],
     // Trend readings for the named measure.
     String trendFacts = '',
+    String? imagePath,
     GenerationCancellation? cancellation,
   }) async* {
     await _preemptBackground();
-    final q = question.trim();
+    final q = question.trim().isEmpty && imagePath != null
+        ? 'Analyze this image: if it is food, estimate calories, macros, and health tips; if it is a medical document or medicine, explain it clearly.'
+        : question.trim();
     if (q.isEmpty) {
       yield const AskChunk('', done: true);
       return;
@@ -409,9 +453,23 @@ class AiService {
     // Pick the engine.
     final useRemote = await _remote.remoteActive();
 
+    // Direct on-device Vision / Image analysis path when an image is attached.
+    if (imagePath != null && !useRemote) {
+      if (await _manager.installedModel() == null) {
+        yield const AskChunk(
+          'Set up a Vision model first. Open **Settings → On-device Model** and '
+          'download **Qwen 3.5 Vision (0.8B · Food & Image)** or **SmolVLM (0.5B · Fast Vision Extract)**.',
+          done: true,
+        );
+        return;
+      }
+      yield* _answerImageLocal(q, imagePath, cancellation: cancellation);
+      return;
+    }
+
     // Route only on-device answers.
     RoutedAnswer? routed;
-    if (shouldUseQueryRouter(cloudActive: useRemote)) {
+    if (imagePath == null && shouldUseQueryRouter(cloudActive: useRemote)) {
       routed = routeQuestion(q, docs);
       if (routed != null) {
         debugPrint(
@@ -777,6 +835,127 @@ class AiService {
           'I couldn\'t answer that just now. Please try again.',
           done: true,
         );
+      }
+    }
+  }
+
+  /// Multimodal Vision inference (or OCR fallback for text-only models) on an attached image.
+  Stream<AskChunk> _answerImageLocal(
+    String question,
+    String imagePath, {
+    GenerationCancellation? cancellation,
+  }) async* {
+    String? tempResizedPath;
+    try {
+      final sw = Stopwatch()..start();
+      await _ensureLoaded();
+      final loadMs = sw.elapsedMilliseconds;
+
+      if (!_spec!.supportsVision) {
+        // Fallback: try on-device OCR if the active model is text-only.
+        final ocrText = (await _scan.recognizeText(imagePath)).trim();
+        if (ocrText.isEmpty) {
+          yield AskChunk(
+            'Your active model (**${_spec!.displayName}**) is text-only and no printed '
+            'text was found in this photo.\n\n'
+            'To analyze **Food Scan** photos and medical images directly with Vision AI, '
+            'open **Settings → On-device Model** and switch to:\n'
+            '- **Qwen 3.5 Vision (0.8B · Food & Image)**\n'
+            '- **SmolVLM (0.5B · Fast Vision Extract)**',
+            done: true,
+          );
+          return;
+        }
+        await _clearKv();
+        final prompt = chatmlFull([
+          (role: 'system', text: _visionSystemPrompt),
+          (
+            role: 'user',
+            text: 'Extracted text from image:\n$ocrText\n\nQuestion: $question',
+          ),
+        ]);
+        final feed = _spec!.canThink ? '$prompt$_kNoThinkPrefill' : prompt;
+        final buf = StringBuffer();
+        cancellation?.attach(_stopLocal);
+        try {
+          await for (final tok in untilCancelled(
+            _ctrl!.generate(
+              prompt: feed,
+              temperature: 0.2,
+              topK: 40,
+              topP: 0.95,
+              maxTokens: 512,
+            ),
+            cancellation,
+          )) {
+            buf.write(tok);
+            final p = _split(buf.toString());
+            yield AskChunk(p.answer, thinking: p.thinking);
+            if (cancellation?.cancelled ?? false) break;
+          }
+        } finally {
+          cancellation?.detach();
+          await _clearKv();
+        }
+        final parsed = _split(buf.toString());
+        yield _finalLocalChunk(parsed, null);
+        return;
+      }
+
+      // Direct Multimodal Vision (VLM) path using [IMG:path] + libmtmd!
+      tempResizedPath = await _prepareVisionImage(imagePath);
+      await _clearKv();
+      final rawPrompt = chatmlFull([
+        (role: 'system', text: _visionSystemPrompt),
+        (role: 'user', text: '[IMG:$tempResizedPath]\n$question'),
+      ]);
+      final feed = _spec!.canThink ? '$rawPrompt$_kNoThinkPrefill' : rawPrompt;
+
+      final buf = StringBuffer();
+      var tokens = 0;
+      var ttftMs = -1;
+      cancellation?.attach(_stopLocal);
+      try {
+        await for (final tok in untilCancelled(
+          _ctrl!.generate(
+            prompt: feed,
+            temperature: 0.2,
+            topK: 40,
+            topP: 0.95,
+            maxTokens: 512,
+          ),
+          cancellation,
+        )) {
+          if (ttftMs < 0) ttftMs = sw.elapsedMilliseconds - loadMs;
+          tokens++;
+          buf.write(tok);
+          final p = _split(buf.toString());
+          yield AskChunk(p.answer, thinking: p.thinking);
+          if (cancellation?.cancelled ?? false) break;
+        }
+      } finally {
+        cancellation?.detach();
+        await _clearKv();
+      }
+      debugPrint(
+        '[Ayus.vision] model=${_spec!.id} loadMs=$loadMs ttftMs=$ttftMs '
+        'tokens=$tokens totalMs=${sw.elapsedMilliseconds}',
+      );
+      final parsed = _split(buf.toString());
+      yield _finalLocalChunk(parsed, null);
+    } catch (e) {
+      debugPrint('[Ayus.vision] error: $e');
+      await _clearKv();
+      if (cancellation?.cancelled ?? false) return;
+      yield const AskChunk(
+        'Could not analyze that image right now. Please try again.',
+        done: true,
+      );
+    } finally {
+      if (tempResizedPath != null && tempResizedPath != imagePath) {
+        try {
+          await File(tempResizedPath).delete();
+        } catch (_) {}
       }
     }
   }

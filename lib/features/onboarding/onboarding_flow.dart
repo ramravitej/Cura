@@ -8,7 +8,7 @@ import '../library/home_screen.dart';
 import '../security/app_lock.dart' show appLockedNotifier;
 
 /// Persisted flag: has the user been through onboarding (engine/model choice)?
-const kOnboardedKey = 'cura_onboarded';
+const kOnboardedKey = 'ayus_onboarded';
 
 /// True once onboarding has been completed. Read once at launch by the root gate.
 Future<bool> hasOnboarded() async {

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
@@ -19,6 +21,7 @@ import '../ai/remote/remote_ai_store.dart';
 import '../ai/retrieval.dart';
 import '../ai/widgets/model_download_sheet.dart';
 import '../library/document.dart';
+import '../scan/scan_service.dart';
 import '../scan/summary_rewriter.dart';
 import '../trends/trend_card.dart';
 import '../trends/trend_detail_screen.dart';
@@ -46,6 +49,7 @@ class ChatMessage {
     this.thinkingActive = false,
     this.thinkingSeconds,
     this.trends = const [],
+    this.imagePath,
   });
 
   final ChatRole role;
@@ -73,6 +77,9 @@ class ChatMessage {
   /// Charts for the named measure. Derived, not stored.
   final List<TrendSeries> trends;
 
+  /// Optional attached image path for Vision / Food Scan messages.
+  final String? imagePath;
+
   ChatMessage copyWith({
     String? text,
     CuraDocument? source,
@@ -82,6 +89,7 @@ class ChatMessage {
     bool? thinkingActive,
     int? thinkingSeconds,
     List<TrendSeries>? trends,
+    String? imagePath,
   }) {
     return ChatMessage(
       role: role,
@@ -94,17 +102,20 @@ class ChatMessage {
       thinkingActive: thinkingActive ?? this.thinkingActive,
       thinkingSeconds: thinkingSeconds ?? this.thinkingSeconds,
       trends: trends ?? this.trends,
+      imagePath: imagePath ?? this.imagePath,
     );
   }
 }
 
-/// Q&A for the user's documents.
+/// Q&A for the user's documents and Vision Food/Image Scan.
 class AskScreen extends ConsumerStatefulWidget {
   const AskScreen({
     super.key,
     required this.prompts,
     required this.onOpenDocument,
     required this.onOpenSettings,
+    this.initialImagePath,
+    this.initialPrompt,
   });
 
   final AskPromptSet prompts;
@@ -112,6 +123,12 @@ class AskScreen extends ConsumerStatefulWidget {
 
   /// Opens Settings when no model is ready.
   final VoidCallback onOpenSettings;
+
+  /// Optional image pre-attached (e.g., from Home "Food Scan").
+  final String? initialImagePath;
+
+  /// Optional initial question text.
+  final String? initialPrompt;
 
   @override
   ConsumerState<AskScreen> createState() => _AskScreenState();
@@ -142,6 +159,9 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   String? _sessionModel;
   bool _showSuggestions = true;
   bool _busy = false;
+
+  // Attached photo for Vision / Food Scan.
+  String? _attachedImagePath;
 
   // Stop the active model.
   GenerationCancellation? _cancel;
@@ -181,9 +201,18 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   @override
   void initState() {
     super.initState();
+    _attachedImagePath = widget.initialImagePath;
+    if (widget.initialPrompt != null && widget.initialPrompt!.isNotEmpty) {
+      _input.text = widget.initialPrompt!;
+    }
     // Start a fresh chat.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _ensureAiReady();
+      if (mounted &&
+          widget.initialImagePath != null &&
+          (widget.initialPrompt?.isNotEmpty ?? false)) {
+        await _send(_input.text);
+      }
     });
   }
 
@@ -284,6 +313,65 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   String _titleFor(String text) =>
       text.length > 40 ? '${text.substring(0, 40).trim()}…' : text;
 
+  Future<void> _pickVisionImage() async {
+    if (_busy) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.surface,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.restaurant_menu_outlined,
+                  color: AppColors.accent,
+                ),
+                title: const Text('Food Scan (Camera / Gallery)'),
+                subtitle: const Text(
+                  'Snap a meal photo to estimate calories & macros',
+                ),
+                onTap: () => Navigator.of(context).pop('food_camera'),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppColors.accent,
+                ),
+                title: const Text('Choose Photo from Gallery'),
+                subtitle: const Text(
+                  'Pick any food or medical image from your device',
+                ),
+                onTap: () => Navigator.of(context).pop('gallery'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    String? pickedPath;
+    if (choice == 'food_camera') {
+      final paths = await ref.read(scanServiceProvider).captureDocument();
+      if (paths.isNotEmpty) pickedPath = paths.first;
+    } else if (choice == 'gallery') {
+      final res = await FilePicker.platform.pickFiles(type: FileType.image);
+      pickedPath = res?.files.singleOrNull?.path;
+    }
+    if (!mounted || pickedPath == null) return;
+    setState(() {
+      _attachedImagePath = pickedPath;
+      if (_input.text.trim().isEmpty) {
+        _input.text =
+            'Analyze this food/image: estimate calories, protein, carbs, fats, and share health tips.';
+        _input.selection = TextSelection.collapsed(offset: _input.text.length);
+      }
+    });
+  }
+
   Future<void> _send(String raw) async {
     // Let an in-flight transcription finish.
     if (_voiceState == _VoiceState.transcribing) return;
@@ -296,8 +384,11 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         });
       }
     }
-    final text = raw.trim();
-    if (text.isEmpty || _busy) return;
+    final attachedImage = _attachedImagePath;
+    final text = raw.trim().isEmpty && attachedImage != null
+        ? 'Analyze this food/image: estimate calories, protein, carbs, fats, and share health tips.'
+        : raw.trim();
+    if ((text.isEmpty && attachedImage == null) || _busy) return;
 
     final repo = ref.read(chatRepositoryProvider);
 
@@ -320,7 +411,14 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     setState(() {
       _showSuggestions = false;
       _busy = true;
-      _messages.add(ChatMessage(role: ChatRole.user, text: text));
+      _attachedImagePath = null;
+      _messages.add(
+        ChatMessage(
+          role: ChatRole.user,
+          text: text,
+          imagePath: attachedImage,
+        ),
+      );
     });
     _input.clear();
     // Re-arm auto-follow for the new question.
@@ -350,12 +448,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
     // Check that an engine is ready.
     final docs = ref.read(documentsProvider).value ?? const [];
-    final needsModel = routeQuestion(text, docs) == null;
-    if (needsModel && docs.isNotEmpty && !await _aiReady()) {
+    final needsModel = attachedImage != null || routeQuestion(text, docs) == null;
+    if (needsModel && (docs.isNotEmpty || attachedImage != null) && !await _aiReady()) {
       const reply =
           'Set up an AI model first from Settings. Choose a downloaded model or '
           'a cloud model, then I can answer questions about '
-          'your records.';
+          'your records and photos.';
       await repo.addMessage(_sessionId!, ChatRole.assistant, reply);
       if (!mounted || seq != _sendSeq) return;
       setState(() {
@@ -377,7 +475,9 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     _streamSources = const [];
     _streamSourceTotal = 0;
     // Facts for the prompt; charts for the answer.
-    _streamTrends = trendsForQuestion(text, scanTrends(docs));
+    _streamTrends = attachedImage == null
+        ? trendsForQuestion(text, scanTrends(docs))
+        : const [];
     _streamThinking = '';
     _thinkingActive = false;
     _thinkingStart = null;
@@ -442,6 +542,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
               focusDocIds: focusDocIds,
               orderedFocusDocIds: orderedFocusDocIds,
               trendFacts: _streamTrends.map(trendFacts).join('\n\n'),
+              imagePath: attachedImage,
               cancellation: cancel,
             )) {
       // Stop if the request is stale.
@@ -1063,12 +1164,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 onCancelVoice: _cancelVoice,
                 voiceState: _voiceState,
                 amplitude: _amplitude,
-                // Reasoning toggle lives in the composer, but only for models
-                // that support thinking (e.g. Qwen3) — otherwise the pill stays
-                // clean. The model itself is switched from the header selector.
                 showThink: !onRemote && (activeModel?.canThink ?? false),
                 thinking: thinking,
                 onToggleThink: _busy ? null : () => _setThinkHarder(!thinking),
+                attachedImagePath: _attachedImagePath,
+                onPickImage: _pickVisionImage,
+                onClearImage: () => setState(() => _attachedImagePath = null),
               ),
             ],
           ),
@@ -1197,14 +1298,33 @@ class _MessageBubble extends StatelessWidget {
             bottomRight: Radius.circular(4),
           ),
         ),
-        child: Text(
-          message.text,
-          style: const TextStyle(
-            fontFamily: 'PlusJakartaSans',
-            fontSize: 14.5,
-            height: 1.4,
-            color: AppColors.userBubbleText,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (message.imagePath != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(message.imagePath!),
+                  height: 150,
+                  width: 200,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Text(
+              message.text,
+              style: const TextStyle(
+                fontFamily: 'PlusJakartaSans',
+                fontSize: 14.5,
+                height: 1.4,
+                color: AppColors.userBubbleText,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1246,7 +1366,7 @@ class _MessageBubble extends StatelessWidget {
                       const CuraSpark(size: 24),
                       const SizedBox(width: 6),
                       Text(
-                        'Cura',
+                        'AyusAI',
                         style: textTheme.bodySmall?.copyWith(
                           color: AppColors.secondary,
                         ),
@@ -1974,6 +2094,9 @@ class _InputBar extends StatelessWidget {
     required this.showThink,
     required this.thinking,
     required this.onToggleThink,
+    this.attachedImagePath,
+    this.onPickImage,
+    this.onClearImage,
   });
 
   final TextEditingController controller;
@@ -2008,6 +2131,11 @@ class _InputBar extends StatelessWidget {
   /// Toggle think-harder.
   final VoidCallback? onToggleThink;
 
+  /// Attached image for Vision / Food Scan.
+  final String? attachedImagePath;
+  final VoidCallback? onPickImage;
+  final VoidCallback? onClearImage;
+
   // One height for all three faces so swapping doesn't jump the footer.
   static const double _barHeight = 52;
 
@@ -2019,6 +2147,7 @@ class _InputBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (attachedImagePath != null) _attachedImageChip(context),
           if (editing) _editingChip(context),
           // The three faces (compose / listening / transcribing) cross-fade in
           // the same footprint, so recording visibly takes over the composer.
@@ -2036,6 +2165,58 @@ class _InputBar extends StatelessWidget {
             child: _face(context),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _attachedImageChip(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, left: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.softTint,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                File(attachedImagePath!),
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.image_outlined,
+                  size: 24,
+                  color: AppColors.accent,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Photo attached for Vision AI',
+              style: TextStyle(
+                fontFamily: 'PlusJakartaSans',
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accent,
+              ),
+            ),
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: onClearImage,
+              borderRadius: BorderRadius.circular(12),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close, size: 16, color: AppColors.secondary),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2097,7 +2278,7 @@ class _InputBar extends StatelessWidget {
         Expanded(
           child: Container(
             constraints: const BoxConstraints(minHeight: _barHeight),
-            padding: const EdgeInsets.only(left: 16, right: 6),
+            padding: const EdgeInsets.only(left: 8, right: 6),
             decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(999),
@@ -2105,6 +2286,20 @@ class _InputBar extends StatelessWidget {
             ),
             child: Row(
               children: [
+                IconButton(
+                  onPressed: busy ? null : onPickImage,
+                  icon: Icon(
+                    attachedImagePath != null
+                        ? Icons.camera_alt
+                        : Icons.add_a_photo_outlined,
+                    size: 20,
+                    color: attachedImagePath != null
+                        ? AppColors.accent
+                        : AppColors.secondary,
+                  ),
+                  tooltip: 'Food Scan / Attach Image',
+                  visualDensity: VisualDensity.compact,
+                ),
                 Expanded(
                   child: TextField(
                     controller: controller,
@@ -2115,7 +2310,9 @@ class _InputBar extends StatelessWidget {
                     decoration: InputDecoration(
                       isCollapsed: true,
                       border: InputBorder.none,
-                      hintText: 'Ask anything…',
+                      hintText: attachedImagePath != null
+                          ? 'Ask about this photo…'
+                          : 'Ask anything or scan food…',
                       hintStyle: textTheme.bodyMedium?.copyWith(
                         color: AppColors.faint,
                       ),

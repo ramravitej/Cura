@@ -659,10 +659,9 @@ packages:
   llama_flutter_android:
     dependency: "direct main"
     description:
-      name: llama_flutter_android
-      sha256: "203c8ac4dc28a4e4dc7fabb6523704ad18aaf09f65261696628328e669744d3e"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/llama_flutter_android"
+      relative: true
+    source: path
     version: "0.2.3"
   local_auth:
     dependency: "direct main"

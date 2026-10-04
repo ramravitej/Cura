@@ -164,7 +164,7 @@ class SettingsView extends ConsumerWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'Cura organizes and explains your documents. It does not provide '
+                  'AyusAI organizes and explains your documents. It does not provide '
                   'medical advice. Always consult a qualified healthcare professional.',
                   style: textTheme.bodySmall?.copyWith(height: 1.5),
                 ),
@@ -344,7 +344,7 @@ class _SecuritySectionState extends State<_SecuritySection> {
           }
           return;
         }
-        if (!await _auth.authenticate('Confirm to turn on Cura app lock')) {
+        if (!await _auth.authenticate('Confirm to turn on AyusAI app lock')) {
           return; // cancelled — leave it off
         }
       }
@@ -365,7 +365,7 @@ class _SecuritySectionState extends State<_SecuritySection> {
           iconColor: AppColors.accent,
           tileColor: AppColors.softTint,
           title: 'App lock',
-          subtitle: 'Require fingerprint to open Cura',
+          subtitle: 'Require fingerprint to open AyusAI',
           trailing: Switch(
             value: _enabled,
             onChanged: _busy ? null : _onToggle,
@@ -1215,7 +1215,7 @@ class _CloudModelSectionState extends ConsumerState<_CloudModelSection> {
         title: const Text('Clear cloud settings?'),
         content: const Text(
           'Your API key and cloud settings will be removed from this device and '
-          'Cura will use the on-device model.',
+          'AyusAI will use the on-device model.',
         ),
         actions: [
           TextButton(
@@ -1253,7 +1253,7 @@ class _CloudModelSectionState extends ConsumerState<_CloudModelSection> {
         content: Text(
           'Your questions and the document text needed to answer them will be '
           'sent to $provider over the internet. That data leaves this device. '
-          'Cura stays on-device by default and you can switch back anytime. '
+          'AyusAI stays on-device by default and you can switch back anytime. '
           'Only enable this if you\'re comfortable with that.',
         ),
         actions: [

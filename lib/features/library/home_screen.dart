@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -116,6 +117,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
+                leading: const Icon(
+                  Icons.restaurant_menu_outlined,
+                  color: AppColors.accent,
+                ),
+                title: const Text('Food Scan · Vision AI'),
+                subtitle: const Text(
+                  'Snap or pick a meal photo for calories, macros & coach tips',
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(_AddDocumentAction.foodScan),
+              ),
+              ListTile(
                 leading: const Icon(Icons.document_scanner_outlined),
                 title: const Text('Scan document'),
                 subtitle: const Text('Use the camera or choose page images'),
@@ -141,6 +154,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
     if (!mounted) return;
     switch (action) {
+      case _AddDocumentAction.foodScan:
+        await _onFoodScan();
       case _AddDocumentAction.scan:
         await _onScan();
       case _AddDocumentAction.pdf:
@@ -150,6 +165,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       case null:
         return;
     }
+  }
+
+  Future<void> _onFoodScan() async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.surface,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppColors.accent,
+                ),
+                title: const Text('Take a photo (Camera)'),
+                subtitle: const Text('Snap a photo of your food or meal'),
+                onTap: () => Navigator.of(context).pop('camera'),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppColors.accent,
+                ),
+                title: const Text('Choose from Gallery'),
+                subtitle: const Text('Pick an existing food or health photo'),
+                onTap: () => Navigator.of(context).pop('gallery'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || source == null) return;
+    String? imagePath;
+    if (source == 'camera') {
+      final paths = await ref.read(scanServiceProvider).captureDocument();
+      if (paths.isNotEmpty) imagePath = paths.first;
+    } else if (source == 'gallery') {
+      final res = await FilePicker.platform.pickFiles(type: FileType.image);
+      if (res != null && res.files.isNotEmpty) {
+        imagePath = res.files.first.path;
+      }
+    }
+    if (!mounted || imagePath == null) return;
+    final prompts = await askPromptRotation.takeNextAskSet();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AskScreen(
+          prompts: prompts,
+          onOpenDocument: _openDocument,
+          onOpenSettings: () => setState(() => _currentTab = CuraTab.settings),
+          initialImagePath: imagePath,
+          initialPrompt:
+              'Analyze this food image: identify the dishes/ingredients, estimate total calories and macronutrients (protein, carbs, fat), and give brief health tips.',
+        ),
+      ),
+    );
   }
 
   // Manual entry flow.
@@ -575,7 +652,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final quit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Quit Cura?'),
+        title: const Text('Quit AyusAI?'),
         content: const Text('Do you want to close the app?'),
         actions: [
           TextButton(
@@ -660,4 +737,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 }
 
-enum _AddDocumentAction { scan, pdf, manual }
+enum _AddDocumentAction { foodScan, scan, pdf, manual }

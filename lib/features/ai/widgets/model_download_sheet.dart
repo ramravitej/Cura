@@ -16,7 +16,8 @@ Future<bool> warnIfAnotherModelIsDownloading(
   final running = ref.read(llmDownloadProvider);
   if (running == null ||
       !running.running ||
-      running.fileName == wanted.fileName) {
+      running.fileName == wanted.fileName ||
+      running.fileName == wanted.mmprojFileName) {
     return false;
   }
   await showDialog<void>(
@@ -118,13 +119,17 @@ class _ModelDownloadSheetState extends ConsumerState<ModelDownloadSheet> {
     final textTheme = Theme.of(context).textTheme;
     // From the provider, not local state, so reopening picks up where it is.
     final download = ref.watch(llmDownloadProvider);
-    ref.listen(llmDownloadProvider, (previous, next) {
+    ref.listen(llmDownloadProvider, (previous, next) async {
       if (!mounted) return;
-      // Gone means done, but only claim it for our own model.
-      if (previous != null &&
-          next == null &&
-          previous.fileName == _selected.fileName) {
-        Navigator.of(context).pop(true);
+      final matchesSelected =
+          previous != null &&
+          (previous.fileName == _selected.fileName ||
+              previous.fileName == _selected.mmprojFileName);
+      if (matchesSelected && next == null) {
+        // For two-part Vision models, only pop once both main + mmproj exist.
+        if (await ref.read(aiModelManagerProvider).isInstalled(_selected)) {
+          if (context.mounted) Navigator.of(context).pop(true);
+        }
       } else if (next?.error != null && _starting) {
         setState(() => _starting = false);
       }

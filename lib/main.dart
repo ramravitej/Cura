@@ -23,7 +23,7 @@ class CuraApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cura',
+      title: 'AyusAI',
       debugShowCheckedModeBanner: false,
       theme: CuraTheme.light,
       home: const _RootGate(),

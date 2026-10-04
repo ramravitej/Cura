@@ -16,16 +16,23 @@ final aiModelManagerProvider = Provider<AiModelManager>((ref) {
 /// Starts and tracks model downloads. Not autoDispose, so it outlives the sheet
 /// that started one and still runs [ModelDownloader.onFinished].
 final modelDownloaderProvider = Provider<ModelDownloader>((ref) {
-  final downloader = ModelDownloader(
+  late final ModelDownloader downloader;
+  downloader = ModelDownloader(
     onFinished: (task, ok) async {
       if (!ok) return;
       // APK: update dialog handles install.
       if (task.metaData == kUpdateDownload) return;
       if (task.metaData == kLlmDownload) {
-        // Activate here, since download() no longer waits for the transfer.
         final model = aiModelByFileName(task.filename);
         if (model != null) {
-          await ref.read(aiModelManagerProvider).activate(model);
+          final mgr = ref.read(aiModelManagerProvider);
+          // For Vision models, if main GGUF just finished and mmproj is still
+          // missing, immediately chain the mmproj download.
+          if (model.supportsVision && !await mgr.isInstalled(model)) {
+            await mgr.download(model, downloader);
+            return;
+          }
+          await mgr.activate(model);
         }
         // Drop the warm model so the next question loads the new one.
         ref.invalidate(aiServiceProvider);

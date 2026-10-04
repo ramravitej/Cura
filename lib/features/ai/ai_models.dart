@@ -12,6 +12,8 @@ class AiModel {
     this.maxOutputTokens = 768,
     this.canThink = false,
     this.thinkingMaxTokens = 1024,
+    this.mmprojUrl,
+    this.mmprojFileName,
   });
 
   /// Stable id used in the catalog and persisted as the active selection.
@@ -50,14 +52,65 @@ class AiModel {
   /// Token budget with "Think harder" on: larger than [maxOutputTokens] because
   /// the reasoning chain and the answer must both fit.
   final int thinkingMaxTokens;
+
+  /// Optional multimodal vision projector (mmproj) download URL.
+  final String? mmprojUrl;
+
+  /// Optional multimodal vision projector (mmproj) local file name.
+  final String? mmprojFileName;
+
+  /// Whether this model supports direct on-device Vision (Image + Text).
+  bool get supportsVision => mmprojUrl != null && mmprojFileName != null;
 }
 
-/// Available models: open (no login, no token) Q4_K_M GGUFs by `bartowski`.
-/// Q4_K_M holds accuracy better than plain Q4_0, at the cost of ARM's Q4_0
-/// repacking fast path.
+/// Available models: open (no login, no token) GGUFs including Multimodal Vision
+/// models (with `mmproj` vision encoders) for Food Scan and Medical Image Q&A.
 const List<AiModel> kAiModelCatalog = [
-  // LFM2.5 (Liquid AI), the default: small, fast, strong instruction-following.
-  // ChatML markers; the bundled llama.cpp has native LFM2 support.
+  // Compact Qwen 3.5 Vision model (0.8B) — ideal for tablets/phones with ~1.5GB free RAM.
+  AiModel(
+    id: 'qwen3_5_0_8b_vision_gguf',
+    displayName: 'Qwen 3.5 Vision (0.8B · Food & Image)',
+    url:
+        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
+    fileName: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+    mmprojUrl:
+        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf',
+    mmprojFileName: 'mmproj-Qwen3.5-0.8B-F16.gguf',
+    sizeLabel: '703 MB · Vision',
+    template: 'chatml',
+    contextSize: 2048,
+    canThink: true,
+  ),
+  // Ultra-lightweight SmolVLM 500M Vision model for fast image extraction.
+  AiModel(
+    id: 'smolvlm_500m_vision_gguf',
+    displayName: 'SmolVLM (0.5B · Fast Vision Extract)',
+    url:
+        'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf',
+    fileName: 'SmolVLM-500M-Instruct-Q8_0.gguf',
+    mmprojUrl:
+        'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
+    mmprojFileName: 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
+    sizeLabel: '520 MB · Vision',
+    template: 'chatml',
+    contextSize: 2048,
+  ),
+  // Qwen 3.5 2B Vision model (larger, for devices with more free RAM).
+  AiModel(
+    id: 'qwen3_5_2b_gguf',
+    displayName: 'Qwen 3.5 Vision (2B)',
+    url:
+        'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+    fileName: 'Qwen3.5-2B-Q4_K_M.gguf',
+    mmprojUrl:
+        'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-F16.gguf',
+    mmprojFileName: 'mmproj-Qwen3.5-2B-F16.gguf',
+    sizeLabel: '1.85 GB · Vision',
+    template: 'chatml',
+    contextSize: 2048,
+    canThink: true,
+  ),
+  // LFM2.5 (Liquid AI): small, fast, strong text instruction-following.
   AiModel(
     id: 'lfm2_5_1_2b_gguf',
     displayName: 'LFM2.5 (1.2B)',
@@ -68,8 +121,7 @@ const List<AiModel> kAiModelCatalog = [
     template: 'chatml',
     contextSize: 2048,
   ),
-  // Qwen3 1.7B: the quality pick, largest and slowest. A reasoning model
-  // (`canThink`), run with /no_think unless "Think harder" is on.
+  // Qwen3 1.7B: text reasoning model.
   AiModel(
     id: 'qwen3_1_7b_gguf',
     displayName: 'Qwen3 (1.7B)',
@@ -77,6 +129,17 @@ const List<AiModel> kAiModelCatalog = [
         'https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf',
     fileName: 'Qwen_Qwen3-1.7B-Q4_K_M.gguf',
     sizeLabel: '1.28 GB',
+    template: 'chatml',
+    contextSize: 2048,
+    canThink: true,
+  ),
+  AiModel(
+    id: 'qwen3_0_6b_gguf',
+    displayName: 'Qwen3 (0.6B, Extract)',
+    url:
+        'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf',
+    fileName: 'Qwen3-0.6B-Q4_K_M.gguf',
+    sizeLabel: '378 MB',
     template: 'chatml',
     contextSize: 2048,
     canThink: true,
@@ -93,8 +156,7 @@ const List<AiModel> kAiModelCatalog = [
   ),
 ];
 
-/// Default model — LFM2.5, the fast + accurate pick. If it OOMs on a very
-/// low-RAM phone, switch to the 0.5B. All run fully on-device.
+/// Default model — Qwen 3.5 Vision (0.8B), supporting both text and images on-device.
 final AiModel kDefaultModel = kAiModelCatalog.first;
 
 /// Looks up a catalog entry by id (used to restore the active selection).
@@ -105,10 +167,11 @@ AiModel? aiModelById(String? id) {
   return null;
 }
 
-/// Looks up a catalog entry by file name, since the downloader knows files.
+/// Looks up a catalog entry by file name (either main GGUF or mmproj GGUF).
 AiModel? aiModelByFileName(String? fileName) {
+  if (fileName == null) return null;
   for (final m in kAiModelCatalog) {
-    if (m.fileName == fileName) return m;
+    if (m.fileName == fileName || m.mmprojFileName == fileName) return m;
   }
   return null;
 }
