@@ -363,6 +363,53 @@ class Gemma3Template : ChatTemplate {
 }
 
 /**
+ * Gemma 4 format (Google Gemma 4 E2B IT multimodal & text)
+ * Format:
+ * <bos><|turn>system
+ * {system}<turn|>
+ * <|turn>user
+ * {user}<turn|>
+ * <|turn>model
+ */
+class Gemma4Template : ChatTemplate {
+    override val name = "gemma4"
+
+    override fun format(messages: List<TemplateChatMessage>): String {
+        val builder = StringBuilder()
+        builder.append("<bos>")
+        for (message in messages) {
+            val role = if (message.role == "assistant") "model" else message.role
+            builder.append("<|turn>$role\n${message.content.trim()}<turn|>\n")
+        }
+        builder.append("<|turn>model\n")
+        return builder.toString()
+    }
+}
+
+/**
+ * SmolVLM / SmolVLM2 format
+ * Format:
+ * <|im_start|>{system}\n\nUser: {user}<end_of_utterance>\nAssistant:
+ */
+class SmolVLMTemplate : ChatTemplate {
+    override val name = "smolvlm"
+
+    override fun format(messages: List<TemplateChatMessage>): String {
+        val builder = StringBuilder()
+        builder.append("<|im_start|>")
+        for (message in messages) {
+            when (message.role) {
+                "system" -> builder.append("${message.content.trim()}\n\n")
+                "user" -> builder.append("User: ${message.content.trim()}<end_of_utterance>\n")
+                "assistant" -> builder.append("Assistant: ${message.content.trim()}<end_of_utterance>\n")
+            }
+        }
+        builder.append("Assistant:")
+        return builder.toString()
+    }
+}
+
+/**
  * QwQ-32B Reasoning Model format
  * Uses ChatML base but with special thinking tag handling
  * Format:
@@ -587,6 +634,10 @@ object ChatTemplateManager {
         "qwen2.5" to ChatMLTemplate(),
         "command-r" to ChatMLTemplate(),
         
+        // SmolVLM family
+        "smolvlm" to SmolVLMTemplate(),
+        "smolvlm2" to SmolVLMTemplate(),
+
         // Llama family
         "llama3" to Llama3Template(),
         "llama-3" to Llama3Template(),
@@ -619,7 +670,9 @@ object ChatTemplateManager {
         "gemma2" to Gemma2Template(),
         "gemma-2" to Gemma2Template(),
         "gemma3" to Gemma3Template(),
-        "gemma-3" to Gemma3Template()
+        "gemma-3" to Gemma3Template(),
+        "gemma4" to Gemma4Template(),
+        "gemma-4" to Gemma4Template()
     )
     
     // Custom templates (mutable) - registered dynamically at runtime

@@ -804,6 +804,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   Future<void> _openModelSwitcher() async {
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
@@ -2769,26 +2770,41 @@ class _ModelSwitcherSheetState extends ConsumerState<_ModelSwitcherSheet> {
                   ),
                 ),
               )
-            else ...[
-              for (final model in kAiModelCatalog)
-                _SwitcherRow(
-                  model: model,
-                  installed: installed.contains(model.id),
-                  // On cloud, no on-device model reads as active.
-                  active: !onRemote && active?.id == model.id,
-                  downloading: downloadingModel?.id == model.id
-                      ? download!.percent
-                      : null,
-                  onCancel: () =>
-                      ref.read(modelDownloaderProvider).cancel(kLlmDownload),
-                  onUse: () => _use(model),
-                  onDownload: () => _download(model),
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.65,
                 ),
-              // The configured cloud model, when the user has set one up in
-              // Settings — one tap to switch on-device ↔ cloud.
-              if (engine?.remoteConfigured ?? false)
-                _CloudSwitcherRow(label: engine!.remoteLabel, active: onRemote),
-            ],
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final model in kAiModelCatalog)
+                        _SwitcherRow(
+                          model: model,
+                          installed: installed.contains(model.id),
+                          // On cloud, no on-device model reads as active.
+                          active: !onRemote && active?.id == model.id,
+                          downloading: downloadingModel?.id == model.id
+                              ? download!.percent
+                              : null,
+                          onCancel: () => ref
+                              .read(modelDownloaderProvider)
+                              .cancel(kLlmDownload),
+                          onUse: () => _use(model),
+                          onDownload: () => _download(model),
+                        ),
+                      // The configured cloud model, when the user has set one up in
+                      // Settings — one tap to switch on-device ↔ cloud.
+                      if (engine?.remoteConfigured ?? false)
+                        _CloudSwitcherRow(
+                          label: engine!.remoteLabel,
+                          active: onRemote,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),

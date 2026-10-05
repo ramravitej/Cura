@@ -35,11 +35,15 @@ add_subdirectory(src/main/cpp/llama.cpp)
 add_library(mtmd STATIC
     src/main/cpp/llama.cpp/tools/mtmd/mtmd.cpp
     src/main/cpp/llama.cpp/tools/mtmd/mtmd-audio.cpp
+    src/main/cpp/llama.cpp/tools/mtmd/mtmd-image.cpp
     src/main/cpp/llama.cpp/tools/mtmd/mtmd-helper.cpp
     src/main/cpp/llama.cpp/tools/mtmd/clip.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/cogvlm.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/conformer.cpp
+    src/main/cpp/llama.cpp/tools/mtmd/models/dotsocr.cpp
+    src/main/cpp/llama.cpp/tools/mtmd/models/gemma4v.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/glm4v.cpp
+    src/main/cpp/llama.cpp/tools/mtmd/models/hunyuanocr.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/internvl.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/kimivl.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/kimik25.cpp
@@ -51,8 +55,10 @@ add_library(mtmd STATIC
     src/main/cpp/llama.cpp/tools/mtmd/models/pixtral.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/qwen2vl.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/qwen3vl.cpp
+    src/main/cpp/llama.cpp/tools/mtmd/models/step3vl.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/siglip.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/whisper-enc.cpp
+    src/main/cpp/llama.cpp/tools/mtmd/models/deepseekocr.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/mobilenetv5.cpp
     src/main/cpp/llama.cpp/tools/mtmd/models/youtuvl.cpp
 )

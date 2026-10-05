@@ -849,6 +849,24 @@ class AiService {
     try {
       final sw = Stopwatch()..start();
       await _ensureLoaded();
+
+      // If the active model is text-only, check if a Vision model is installed
+      // and automatically switch to it for image analysis.
+      if (!_spec!.supportsVision) {
+        AiModel? installedVision;
+        for (final candidate in kAiModelCatalog) {
+          if (candidate.supportsVision &&
+              await _manager.isInstalled(candidate)) {
+            installedVision = candidate;
+            break;
+          }
+        }
+        if (installedVision != null) {
+          await _manager.activate(installedVision);
+          await dispose();
+          await _ensureLoaded();
+        }
+      }
       final loadMs = sw.elapsedMilliseconds;
 
       if (!_spec!.supportsVision) {
@@ -859,22 +877,25 @@ class AiService {
             'Your active model (**${_spec!.displayName}**) is text-only and no printed '
             'text was found in this photo.\n\n'
             'To analyze **Food Scan** photos and medical images directly with Vision AI, '
-            'open **Settings → On-device Model** and switch to:\n'
+            'tap the model name at the top (or open **Settings → On-device Model**) and download:\n'
+            '- **SmolVLM2 (500M · Vision & Food)**\n'
             '- **Qwen 3.5 Vision (0.8B · Food & Image)**\n'
-            '- **SmolVLM (0.5B · Fast Vision Extract)**',
+            '- **Gemma 4 E2B IT (Vision · LiteRT/GGUF)**',
             done: true,
           );
           return;
         }
         await _clearKv();
-        final prompt = chatmlFull([
+        final prompt = formatPromptForTemplate(_spec!.template, [
           (role: 'system', text: _visionSystemPrompt),
           (
             role: 'user',
             text: 'Extracted text from image:\n$ocrText\n\nQuestion: $question',
           ),
         ]);
-        final feed = _spec!.canThink ? '$prompt$_kNoThinkPrefill' : prompt;
+        final feed = (_spec!.canThink && _spec!.template == 'chatml')
+            ? '$prompt$_kNoThinkPrefill'
+            : prompt;
         final buf = StringBuffer();
         cancellation?.attach(_stopLocal);
         try {
@@ -905,11 +926,13 @@ class AiService {
       // Direct Multimodal Vision (VLM) path using [IMG:path] + libmtmd!
       tempResizedPath = await _prepareVisionImage(imagePath);
       await _clearKv();
-      final rawPrompt = chatmlFull([
+      final rawPrompt = formatPromptForTemplate(_spec!.template, [
         (role: 'system', text: _visionSystemPrompt),
         (role: 'user', text: '[IMG:$tempResizedPath]\n$question'),
       ]);
-      final feed = _spec!.canThink ? '$rawPrompt$_kNoThinkPrefill' : rawPrompt;
+      final feed = (_spec!.canThink && _spec!.template == 'chatml')
+          ? '$rawPrompt$_kNoThinkPrefill'
+          : rawPrompt;
 
       final buf = StringBuffer();
       var tokens = 0;
@@ -1868,13 +1891,15 @@ class AiService {
     return kept.reversed.toList();
   }
 
-  /// Split `<think>` reasoning from answer.
+  /// Split `<think>` / `<|channel>thought` reasoning from answer.
   _ParsedAnswer _split(String raw) {
     var text = raw
         .replaceAll('\\n', '\n')
         .replaceAll('\\t', '\t')
         .replaceAll('\\"', '"')
-        .replaceAll('\\\\', '\\');
+        .replaceAll('\\\\', '\\')
+        .replaceAll('<end_of_utterance>', '')
+        .replaceAll('<turn|>', '');
 
     var thinking = '';
     final close = text.indexOf('</think>');
@@ -1884,6 +1909,18 @@ class AiService {
       if (open != -1) think = think.substring(open + '<think>'.length);
       thinking = think.trim();
       text = text.substring(close + '</think>'.length);
+    } else if (text.contains('<|channel>thought')) {
+      final chClose = text.indexOf('<channel|>');
+      final chOpen = text.indexOf('<|channel>thought');
+      if (chClose != -1 && chClose > chOpen) {
+        thinking = text
+            .substring(chOpen + '<|channel>thought'.length, chClose)
+            .trim();
+        text = text.substring(chClose + '<channel|>'.length);
+      } else {
+        thinking = text.substring(chOpen + '<|channel>thought'.length).trim();
+        text = '';
+      }
     } else {
       final open = text.indexOf('<think>');
       if (open != -1) {

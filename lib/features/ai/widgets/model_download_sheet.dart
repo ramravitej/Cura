@@ -202,13 +202,25 @@ class _ModelDownloadSheetState extends ConsumerState<ModelDownloadSheet> {
             ] else ...[
               // Catalog picker — only when no specific model was requested.
               if (_picker) ...[
-                for (final model in kAiModelCatalog)
-                  _ModelChoice(
-                    model: model,
-                    selected: model.id == _selected.id,
-                    recommended: model.id == widget.recommendedId,
-                    onTap: () => setState(() => _selected = model),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.5,
                   ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final model in kAiModelCatalog)
+                          _ModelChoice(
+                            model: model,
+                            selected: model.id == _selected.id,
+                            recommended: model.id == widget.recommendedId,
+                            onTap: () => setState(() => _selected = model),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 12),
               ],
               if (error != null) ...[

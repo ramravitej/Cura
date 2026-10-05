@@ -66,6 +66,20 @@ class AiModel {
 /// Available models: open (no login, no token) GGUFs including Multimodal Vision
 /// models (with `mmproj` vision encoders) for Food Scan and Medical Image Q&A.
 const List<AiModel> kAiModelCatalog = [
+  // SmolVLM2 500M Vision model — fast, lightweight multimodal VLM (545 MB total).
+  AiModel(
+    id: 'smolvlm2_500m_vision_gguf',
+    displayName: 'SmolVLM2 (500M · Vision & Food)',
+    url:
+        'https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/main/SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+    fileName: 'SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+    mmprojUrl:
+        'https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/main/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+    mmprojFileName: 'mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+    sizeLabel: '545 MB · Vision',
+    template: 'smolvlm',
+    contextSize: 2048,
+  ),
   // Compact Qwen 3.5 Vision model (0.8B) — ideal for tablets/phones with ~1.5GB free RAM.
   AiModel(
     id: 'qwen3_5_0_8b_vision_gguf',
@@ -81,6 +95,20 @@ const List<AiModel> kAiModelCatalog = [
     contextSize: 2048,
     canThink: true,
   ),
+  // Google Gemma 4 E2B IT Multimodal Vision model (QAT quantized + Q8_0 vision encoder).
+  AiModel(
+    id: 'gemma_4_e2b_it_gguf',
+    displayName: 'Gemma 4 E2B IT (Vision · LiteRT/GGUF)',
+    url:
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main/gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf',
+    fileName: 'gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf',
+    mmprojUrl:
+        'https://huggingface.co/mradermacher/Huihui-gemma-4-E2B-it-abliterated-GGUF/resolve/main/Huihui-gemma-4-E2B-it-abliterated.mmproj-Q8_0.gguf',
+    mmprojFileName: 'mmproj-gemma-4-E2B-it-Q8_0.gguf',
+    sizeLabel: '2.7 GB · Vision',
+    template: 'gemma4',
+    contextSize: 2048,
+  ),
   // Ultra-lightweight SmolVLM 500M Vision model for fast image extraction.
   AiModel(
     id: 'smolvlm_500m_vision_gguf',
@@ -92,7 +120,7 @@ const List<AiModel> kAiModelCatalog = [
         'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
     mmprojFileName: 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
     sizeLabel: '520 MB · Vision',
-    template: 'chatml',
+    template: 'smolvlm',
     contextSize: 2048,
   ),
   // Qwen 3.5 2B Vision model (larger, for devices with more free RAM).
